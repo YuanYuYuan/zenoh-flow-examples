@@ -21,7 +21,7 @@ use zenoh_flow::prelude::*;
 
 struct CameraSource {
     output: Output,
-    state: Arc<Mutex<CameraState>>
+    state: Arc<Mutex<CameraState>>,
 }
 
 struct CameraState {
@@ -120,7 +120,10 @@ impl CameraState {
 impl Node for CameraSource {
     async fn iteration(&self) -> Result<()> {
         let mut state = self.state.lock().await;
-        self.output.send_async(Data::from(state.get_frame()), None).await.unwrap();
+        self.output
+            .send_async(Data::from(state.get_frame()), None)
+            .await
+            .unwrap();
         async_std::task::sleep(std::time::Duration::from_millis(state.delay)).await;
         Ok(())
     }
