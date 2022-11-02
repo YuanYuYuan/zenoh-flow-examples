@@ -1,5 +1,5 @@
 id: FizzOperator
-uri: file://./target/release/libexample_fizz.dylib
+uri: file://./target/release/libexample_fizz.so
 inputs:
   - id: Int
     type: ZFUsize
