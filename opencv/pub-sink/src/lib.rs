@@ -1,41 +1,32 @@
 use async_trait::async_trait;
 use zenoh_flow::prelude::*;
 use async_std::sync::Arc;
-use zenoh::{publication::Publisher, prelude::r#async::*};
+use zenoh::prelude::r#async::*;
 
 mod config;
 
 use config::Config;
 
-struct PubSink {
+struct PubSink<'a> {
     input: Input,
     session: Arc<Session>,
+    key_expr: KeyExpr<'a>,
 }
 
-// struct WTF<'a> {
-//     session: Arc<zenoh::Session>,
-//     publisher: Publisher<'a>,
-// }
-
-impl PubSink {
-    async fn new() -> Result<Self> {
-        let session = zenoh::open(zenoh::config::peer()).res().await?;
-        Ok(Self {
-            // session: Arc::new(session),
-            publisher
-        })
+#[async_trait]
+impl<'a> Node for PubSink<'a> {
+    async fn iteration(&self) -> Result<()> {
+        if let Ok(data) = self.input.recv_async().await {
+            self
+                .session
+                .put(self.key_expr.clone(), data.serialize_bincode()?)
+                .congestion_control(CongestionControl::Block)
+                .res()
+                .await?;
+        }
+        Ok(())
     }
 }
-
-// #[async_trait]
-// impl<'a> Node for PubSink<'a> {
-//     async fn iteration(&self) -> Result<()> {
-//         // if let Ok(data) = self.input.recv_async().await {
-
-//         // }
-//         Ok(())
-//     }
-// }
 
 struct PubSinkFactory;
 
@@ -45,17 +36,33 @@ impl SinkFactoryTrait for PubSinkFactory {
         &self,
         _context: &mut Context,
         configuration: &Option<Configuration>,
-        _inputs: Inputs,
+        mut inputs: Inputs,
     ) -> Result<Option<Arc<dyn Node>>> {
-        let session = zenoh::open(zenoh::config::peer()).res().await?;
-        let input =
-        // let publisher = session.declare_publisher("key/expression").res().await?;
-        let wtf = PubSink {
-            // input: inputs,
-            session
-        };
+        let config = configuration.clone().map_or_else(
+            Config::default,
+            |cfg| serde_json::from_value(cfg).unwrap()
+        );
 
-        Ok(Some(Arc::new(wtf)))
-        todo!()
+        let session = Arc::new(zenoh::open(config.zenoh_config).res().await?);
+        let input = inputs
+            .take("Data")
+            .ok_or_else(|| zferror!(ErrorKind::NotFound))?;
+        let key_expr = session
+            .declare_keyexpr(config.key_expr)
+            .res()
+            .await?
+            .into_owned();
+
+        Ok(Some(Arc::new(PubSink {
+            input,
+            session,
+            key_expr,
+        })))
     }
+}
+
+export_sink_factory!(register);
+
+fn register() -> Result<Arc<dyn SinkFactoryTrait>> {
+    Ok(Arc::new(PubSinkFactory) as Arc<dyn SinkFactoryTrait>)
 }

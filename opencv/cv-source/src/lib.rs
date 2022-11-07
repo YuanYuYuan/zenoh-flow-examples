@@ -10,7 +10,7 @@ use std::time::Duration;
 
 struct VideoState {
     capture: VideoCapture,
-    delay: Duration,
+    delay: u64,
     width: i32,
     height: i32,
 }
@@ -24,8 +24,8 @@ impl VideoState {
             delay,
         } = config;
 
-        let capture = path.as_ref().map_or(
-            VideoCapture::new(0, CAP_ANY),
+        let capture = path.as_ref().map_or_else(
+            || VideoCapture::new(0, CAP_ANY),
             |p| VideoCapture::from_file(&p, CAP_ANY)
         )?;
         assert!(
@@ -93,7 +93,7 @@ impl Node for VideoSource {
         self.output
             .send_async(Data::from(state.get_frame()?), None)
             .await?;
-        async_std::task::sleep(state.delay).await;
+        async_std::task::sleep(Duration::from_millis(state.delay)).await;
         Ok(())
     }
 }
@@ -108,7 +108,9 @@ impl SourceFactoryTrait for VideoSourceFactory {
     ) -> Result<Option<Arc<dyn Node>>> {
         let config = configuration.clone().map_or_else(
             Config::default,
-            |cfg| serde_json::from_value(cfg).unwrap()
+            |cfg| {
+                serde_json::from_value(cfg).unwrap()
+            }
         );
 
         let output = outputs.take("Frame").ok_or_else(|| zferror!(ErrorKind::NotFound))?;

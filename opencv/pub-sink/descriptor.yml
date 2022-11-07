@@ -1,0 +1,9 @@
+id: PubSink
+
+uri: file://./target/debug/libpub_sink.so
+
+inputs:
+  - id: Data
+    type: _any_
+
+tags: []
