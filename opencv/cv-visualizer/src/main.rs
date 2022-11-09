@@ -1,13 +1,9 @@
-use zenoh::prelude::r#async::*;
-use std::str::FromStr;
 use clap::Parser;
-use serde::{Serialize, Deserialize};
-use std::{path::PathBuf, time::Duration};
-use anyhow::Result;
-use futures::select;
-use futures::prelude::*;
-use async_std::task::sleep;
-use opencv::{core, highgui, prelude::*, videoio};
+use opencv::{highgui, prelude::*};
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
+use zenoh::prelude::sync::*;
+use zenoh_buffers::traits::SplitBuffer;
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -28,28 +24,30 @@ impl Config {
     }
 }
 
+type Error = Box<dyn std::error::Error + Send + Sync>;
+type Result<T, E = Error> = std::result::Result<T, E>;
+
 #[async_std::main]
 async fn main() -> Result<()> {
     let Args { config } = Args::parse();
     let config = Config::load(config)?;
-    let session = zenoh::open(config.zenoh_config).res().await.unwrap();
-    let subscriber = session.declare_subscriber(&config.key_expr).res().await.unwrap();
 
-    async_std::task::spawn_blocking(move || {
-        loop {
-            while let Ok(data) = subscriber.recv_async().await {
-                let decoded = opencv::imgcodecs::imdecode(
-                    &opencv::types::VectorOfu8::from_iter(data),
-                    opencv::imgcodecs::IMREAD_COLOR,
-                )
-                .unwrap();
-                if decoded.size().unwrap().width > 0 {
-                    highgui::imshow("Test", &decoded).unwrap();
-                }
-                highgui::wait_key(10).unwrap();
+    async_std::task::spawn_blocking(move || -> Result<_> {
+        let session = zenoh::open(config.zenoh_config).res()?;
+        let subscriber = session.declare_subscriber(&config.key_expr).res()?;
+        while let Ok(data) = subscriber.recv() {
+            let decoded = opencv::imgcodecs::imdecode(
+                &opencv::types::VectorOfu8::from_slice(&data.payload.contiguous()),
+                opencv::imgcodecs::IMREAD_COLOR,
+            )?;
+            if decoded.size().unwrap().width > 0 {
+                highgui::imshow("Window", &decoded)?;
             }
+            highgui::wait_key(10)?;
         }
-    });
+        Ok(())
+    })
+    .await?;
 
     Ok(())
 }

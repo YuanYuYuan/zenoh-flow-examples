@@ -2,11 +2,15 @@ mod config;
 
 use config::{Config, DEFAULT_RESOLUTION};
 
-use zenoh_flow::prelude::*;
-use async_trait::async_trait;
 use async_std::sync::{Arc, Mutex};
-use opencv::{prelude::*, self as cv, videoio::{VideoCapture, CAP_ANY}};
+use async_trait::async_trait;
+use opencv::{
+    self as cv,
+    prelude::*,
+    videoio::{VideoCapture, CAP_ANY},
+};
 use std::time::Duration;
+use zenoh_flow::prelude::*;
 
 struct VideoState {
     capture: VideoCapture,
@@ -16,7 +20,6 @@ struct VideoState {
 }
 
 impl VideoState {
-
     fn new(config: Config) -> Result<Self> {
         let Config {
             resolution,
@@ -24,19 +27,16 @@ impl VideoState {
             delay,
         } = config;
 
-        let capture = path.as_ref().map_or_else(
-            || VideoCapture::new(0, CAP_ANY),
-            |p| VideoCapture::from_file(&p, CAP_ANY)
-        )?;
-        assert!(
-            VideoCapture::is_opened(&capture)?,
-            "Cannot open {:?}",
-            path
-        );
+        let capture = if let Some(p) = &path {
+            VideoCapture::from_file(p, CAP_ANY)
+        } else {
+            VideoCapture::new(0, CAP_ANY)
+        }?;
+        assert!(VideoCapture::is_opened(&capture)?, "Cannot open {:?}", path);
 
         let (width, height) = {
             let res: Vec<_> = resolution
-                .unwrap_or(DEFAULT_RESOLUTION.to_string())
+                .unwrap_or_else(|| DEFAULT_RESOLUTION.to_string())
                 .split('x')
                 .map(|val| val.parse::<i32>().unwrap())
                 .collect();
@@ -106,19 +106,15 @@ impl SourceFactoryTrait for VideoSourceFactory {
         configuration: &Option<Configuration>,
         mut outputs: Outputs,
     ) -> Result<Option<Arc<dyn Node>>> {
-        let config = configuration.clone().map_or_else(
-            Config::default,
-            |cfg| {
-                serde_json::from_value(cfg).unwrap()
-            }
-        );
+        let config = configuration
+            .clone()
+            .map_or_else(Config::default, |cfg| serde_json::from_value(cfg).unwrap());
 
-        let output = outputs.take("Frame").ok_or_else(|| zferror!(ErrorKind::NotFound))?;
+        let output = outputs
+            .take("Frame")
+            .ok_or_else(|| zferror!(ErrorKind::NotFound))?;
         let state = Arc::new(Mutex::new(VideoState::new(config)?));
-        Ok(Some(Arc::new(VideoSource {
-            output,
-            state,
-        })))
+        Ok(Some(Arc::new(VideoSource { output, state })))
     }
 }
 

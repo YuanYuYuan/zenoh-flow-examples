@@ -4,14 +4,14 @@ sources:
   - id : Camera
     descriptor: ./opencv/cv-source/descriptor.yml
     configuration:
-      path: /home/circle/Videos/amazon-recruitment.mkv
+      # path: PATH_TO_VIDEO
       resolution: 800x600
       delay: 20
 sinks:
   - id : Pub
     descriptor: ./opencv/pub-sink/descriptor.yml
     configuration:
-      key_expr: zf/data/my_pub
+      key_expr: zf/data/cv_pub
       zenoh_config:
         connect:
           endpoints:

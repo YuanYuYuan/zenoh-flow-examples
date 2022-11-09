@@ -1,7 +1,7 @@
-use async_trait::async_trait;
-use zenoh_flow::prelude::*;
 use async_std::sync::Arc;
+use async_trait::async_trait;
 use zenoh::prelude::r#async::*;
+use zenoh_flow::prelude::*;
 
 mod config;
 
@@ -16,10 +16,15 @@ struct PubSink<'a> {
 #[async_trait]
 impl<'a> Node for PubSink<'a> {
     async fn iteration(&self) -> Result<()> {
-        if let Ok(data) = self.input.recv_async().await {
-            self
-                .session
-                .put(self.key_expr.clone(), data.serialize_bincode()?)
+        if let Ok(msg) = self.input.recv_async().await {
+            let data = match msg {
+                Message::Data(mut data) => data.get_inner_data().try_as_bytes()?.as_ref().clone(),
+                _ => {
+                    panic!()
+                }
+            };
+            self.session
+                .put(self.key_expr.clone(), data)
                 .congestion_control(CongestionControl::Block)
                 .res()
                 .await?;
@@ -38,10 +43,9 @@ impl SinkFactoryTrait for PubSinkFactory {
         configuration: &Option<Configuration>,
         mut inputs: Inputs,
     ) -> Result<Option<Arc<dyn Node>>> {
-        let config = configuration.clone().map_or_else(
-            Config::default,
-            |cfg| serde_json::from_value(cfg).unwrap()
-        );
+        let config = configuration
+            .clone()
+            .map_or_else(Config::default, |cfg| serde_json::from_value(cfg).unwrap());
 
         let session = Arc::new(zenoh::open(config.zenoh_config).res().await?);
         let input = inputs
